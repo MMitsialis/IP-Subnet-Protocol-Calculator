@@ -86,7 +86,8 @@ def calculate_subnet_details(ip_with_cidr):
             
             details["Subnet Mask"] = str(network.netmask)
             details["Host Bits (h)"] = host_bits
-            details["Subnet Bits (s)"] = network.prefixlen % 8 if network.prefixlen > 24 else network.prefixlen
+            classful_prefix = 8 if network.prefixlen <= 8 else 16 if network.prefixlen <= 16 else 24
+            details["Subnet Bits(s)"] = network.prefixlen - classful_prefix
             details["Total IP Addresses"] = total_hosts
             
             # Display usable hosts contextually
@@ -99,11 +100,20 @@ def calculate_subnet_details(ip_with_cidr):
                  
             details["Broadcast Address"] = broadcast_address
             details["Usable Host Range"] = host_range
-
+            
+            ## Display Some local implementation specifics:
+            if network.prefixlen < 31:
+                details[" "] = ""  # spacer before section
+                details["Some local implementation specifics"] = ""
+                details["Most likely Gateway(VIP)"] = last_host - 1
+                details["Most likely Gateway(A))"] = last_host - 3
+                details["Most likely Gateway(B)"] = last_host - 2
+                details["Most likely usable IP Addresses"] = total_hosts - 3
+            
         elif network.version == 6:
             # --- IPv6 Specific Details ---
             
-            # IPv6 networks typically use a /64 prefix for subnets.
+            # IPv6 networks typically use a) /64 prefix for subnets.
             host_bits = 128 - network.prefixlen
             
             details["Subnet Mask Concept"] = "Not Applicable (N/A)"
@@ -162,39 +172,63 @@ class SubnetCalculatorGUI:
         self.ip_cidr_entry = tk.Entry(main_frame, textvariable=self.ip_cidr_var, width=50, font=('Consolas', 11), relief=tk.GROOVE)
         self.ip_cidr_entry.pack(fill='x', padx=5, pady=(0, 10))
         
-        # 2. Button Frame for two buttons (Calculate and Save)
+        # 2. Button Frame for three buttons (Calculate, Copy to Clipboard, Save)
         button_frame = tk.Frame(main_frame, bg=self.bg_color)
         button_frame.pack(fill='x', padx=5, pady=(5, 15))
-        
-        # Calculate Button uses the regular TButton style
-        self.calculate_button = ttk.Button(button_frame, 
-                                           text="Calculate Subnet Details", 
-                                           command=self.perform_calculation, 
-                                           style='TButton') 
-        self.calculate_button.pack(side=tk.LEFT, fill='x', expand=True, padx=(0, 5))
-        
-        # Save Button uses the regular TButton style
-        self.save_button = ttk.Button(button_frame, 
-                                      text="Save to .txt", 
+
+        self.calculate_button = ttk.Button(button_frame,
+                                           text="Calculate Subnet Details",
+                                           command=self.perform_calculation,
+                                           style='TButton')
+        self.calculate_button.pack(side=tk.LEFT, fill='x', expand=True, padx=(0, 3))
+
+        self.clipboard_button = ttk.Button(button_frame,
+                                           text="Copy to Clipboard",
+                                           command=self.copy_to_clipboard,
+                                           state=tk.DISABLED,
+                                           style='TButton')
+        self.clipboard_button.pack(side=tk.LEFT, fill='x', expand=True, padx=(0, 3))
+
+        self.save_button = ttk.Button(button_frame,
+                                      text="Save to .txt",
                                       command=self.save_results_to_file,
                                       state=tk.DISABLED,
-                                      style='TButton') 
-        self.save_button.pack(side=tk.RIGHT, fill='x', expand=True, padx=(5, 0))
+                                      style='TButton')
+        self.save_button.pack(side=tk.LEFT, fill='x', expand=True)
         
         # 3. Results Section
-        # Changed font from bold to regular
         tk.Label(main_frame, text="Subnet Details:", font=('Arial', 11), bg=self.bg_color).pack(anchor='w', pady=(0, 10))
-        
-        self.results_frame = tk.Frame(main_frame, bg='#f0f0f0', bd=1, relief=tk.SUNKEN)
-        self.results_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+        results_container = tk.Frame(main_frame, bg='#f0f0f0', bd=1, relief=tk.SUNKEN)
+        results_container.pack(fill='both', expand=True, padx=5, pady=5)
+
+        self.results_canvas = tk.Canvas(results_container, bg='#f0f0f0', highlightthickness=0)
+        results_scrollbar = ttk.Scrollbar(results_container, orient='vertical', command=self.results_canvas.yview)
+        self.results_canvas.configure(yscrollcommand=results_scrollbar.set)
+
+        results_scrollbar.pack(side=tk.RIGHT, fill='y')
+        self.results_canvas.pack(side=tk.LEFT, fill='both', expand=True)
+
+        self.results_frame = tk.Frame(self.results_canvas, bg='#f0f0f0')
+        self._canvas_window = self.results_canvas.create_window((0, 0), window=self.results_frame, anchor='nw')
+
+        self.results_canvas.bind('<Configure>', self._on_canvas_configure)
+        self.results_canvas.bind('<MouseWheel>', lambda e: self.results_canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
         
         # 4. Signature Label
-        tk.Label(main_frame, text="Made in Antwerp by Runaque", font=('Arial', 9), 
+        tk.Label(main_frame, text="Made in Antwerp by Runaque", font=('Arial', 9),
                  fg='SlateGray', bg=self.bg_color).pack(fill='x', pady=(5, 0))
+        # Local fork attribution — remove this label before submitting a PR to the upstream repo
+        tk.Label(main_frame, text="improvements made in Johannesburg by MMitsialis", font=('Arial', 9),
+                 fg='SlateGray', bg=self.bg_color).pack(fill='x', pady=(0, 0))
         
         # Run initial calculation on startup
         self.perform_calculation()
 
+
+    def _on_canvas_configure(self, event):
+        """Stretches the inner results frame to always fill the canvas width."""
+        self.results_canvas.itemconfig(self._canvas_window, width=event.width)
 
     def clear_results(self):
         """Clears all widgets from the results frame."""
@@ -211,19 +245,26 @@ class SubnetCalculatorGUI:
         # Check for error
         if "Error" in details:
             messagebox.showerror("Calculation Error", details["Error"])
-            self.last_details = {} # Clear state on error
+            self.last_details = {}
             self.save_button.config(state=tk.DISABLED)
+            self.clipboard_button.config(state=tk.DISABLED)
             return
 
-        self.last_details = details # Store successful details
-        self.save_button.config(state=tk.NORMAL) # Enable save button
+        self.last_details = details
+        self.save_button.config(state=tk.NORMAL)
+        self.clipboard_button.config(state=tk.NORMAL)
 
         # Dynamically create and populate labels based on the returned details
         for i, (key, value) in enumerate(details.items()):
             
+            # Whitespace-only keys are spacers — render a blank row and move on
+            if key.strip() == "":
+                tk.Label(self.results_frame, text="", bg='#f0f0f0').grid(row=i, column=0, columnspan=2, pady=2)
+                continue
+
             # Key Label (fixed) - kept regular as before
-            tk.Label(self.results_frame, text=f"{key}:", anchor='w', font=('Arial', 10), bg='#f0f0f0').grid(row=i, column=0, sticky='w', padx=10, pady=4)
-            
+            tk.Label(self.results_frame, text=f"{key}:", anchor='w', font=('Arial', 10), bg='#f0f0f0').grid(row=i, column=0, sticky='w', padx=10, pady=2)
+
             # Value Label (to be updated) - kept bold for emphasis on data
             if key == "Historical Class":
                  # Use light grey color for historical context
@@ -240,39 +281,54 @@ class SubnetCalculatorGUI:
                  font_style = ('Consolas', 10, 'bold')
                  
             value_label = tk.Label(self.results_frame, text=str(value), anchor='w', font=font_style, bg='#f0f0f0', fg=fg_color)
-            value_label.grid(row=i, column=1, sticky='w', padx=10, pady=4)
+            value_label.grid(row=i, column=1, sticky='w', padx=10, pady=2)
             
         # Configure grid for results frame
         self.results_frame.grid_columnconfigure(1, weight=1)
+
+        # Update canvas scroll region to match the newly populated content
+        self.results_frame.update_idletasks()
+        self.results_canvas.configure(scrollregion=self.results_canvas.bbox('all'))
+
+    def _build_content_string(self):
+        """Builds the formatted results string used by both save and clipboard functions."""
+        content = "--- IP Subnet & Protocol Calculation ---\n"
+        content += f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        content += "-" * 40 + "\n"
+        non_spacer_keys = [k for k in self.last_details if k.strip() != ""]
+        max_key_len = max(len(k) for k in non_spacer_keys)
+        for key, value in self.last_details.items():
+            if key.strip() == "":
+                content += "\n"
+            else:
+                content += f"{key.ljust(max_key_len)} : {value}\n"
+        return content
+
+    def copy_to_clipboard(self):
+        """Copies the last calculated details to the system clipboard."""
+        if not self.last_details:
+            messagebox.showwarning("Clipboard Error", "No subnet calculation data available to copy.")
+            return
+        content = self._build_content_string()
+        self.master.clipboard_clear()
+        self.master.clipboard_append(content)
+        messagebox.showinfo("Copied", "Results copied to clipboard.")
 
     def save_results_to_file(self):
         """Opens a file dialog and saves the last calculated details to a text file."""
         if not self.last_details:
             messagebox.showwarning("Save Error", "No subnet calculation data available to save.")
             return
-
-        # Build the content string
-        content = "--- IP Subnet & Protocol Calculation ---\n"
-        content += f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        content += "-" * 40 + "\n"
-        
-        # Find the maximum length of the keys for alignment
-        max_key_len = max(len(key) for key in self.last_details.keys())
-        
-        for key, value in self.last_details.items():
-            content += f"{key.ljust(max_key_len)} : {value}\n"
-        
-        # Open file dialog
+        content = self._build_content_string()
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
-            initialfile=f"subnet_report_{self.last_details.get('Network ID', 'default').replace('/', '_')}.txt",
+            initialfile=f"subnet_report-{self.last_details.get('Network ID', 'default').replace('.', '_')}({self.last_details.get('CIDR Prefix', '').strip('/')}).txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
             title="Save Subnet Calculation Results"
         )
-        
         if file_path:
             try:
-                with open(file_path, 'w') as f:
+                with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
                 messagebox.showinfo("Success", f"Results successfully saved to:\n{file_path}")
             except Exception as e:
