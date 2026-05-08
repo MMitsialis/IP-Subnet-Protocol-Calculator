@@ -104,7 +104,6 @@ def calculate_subnet_details(ip_with_cidr):
             ## Display Some local implementation specifics:
             if network.prefixlen < 31:
                 details[" "] = ""  # spacer before section
-                details["Some local implementation specifics"] = ""
                 details["Most likely Gateway(VIP)"] = last_host - 1
                 details["Most likely Gateway(A))"] = last_host - 3
                 details["Most likely Gateway(B)"] = last_host - 2
@@ -145,7 +144,7 @@ class SubnetCalculatorGUI:
         """Initializes the main application window and components."""
         self.master = master
         master.title("IP Subnet & Protocol Calculator")
-        master.geometry("500x620") # Adjusted size slightly for new field
+        master.geometry("500x740")
         master.resizable(False, False)
         
         # Define the primary background color for the smooth look
@@ -196,6 +195,15 @@ class SubnetCalculatorGUI:
                                       style='TButton')
         self.save_button.pack(side=tk.LEFT, fill='x', expand=True)
         
+        # 4. Signature Labels — packed first with side=BOTTOM so expand=True on the
+        #    results container does not push them outside the window boundary.
+        #    Note: side=BOTTOM stacks in reverse order, so fork line is packed first.
+        # Local fork attribution — remove this label before submitting a PR to the upstream repo
+        tk.Label(main_frame, text="improvements made in Johannesburg by MMitsialis", font=('Arial', 9),
+                 fg='SlateGray', bg=self.bg_color).pack(side=tk.BOTTOM, fill='x')
+        tk.Label(main_frame, text="Made in Antwerp by Runaque", font=('Arial', 9),
+                 fg='SlateGray', bg=self.bg_color).pack(side=tk.BOTTOM, fill='x', pady=(5, 0))
+
         # 3. Results Section
         tk.Label(main_frame, text="Subnet Details:", font=('Arial', 11), bg=self.bg_color).pack(anchor='w', pady=(0, 10))
 
@@ -214,13 +222,6 @@ class SubnetCalculatorGUI:
 
         self.results_canvas.bind('<Configure>', self._on_canvas_configure)
         self.results_canvas.bind('<MouseWheel>', lambda e: self.results_canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
-        
-        # 4. Signature Label
-        tk.Label(main_frame, text="Made in Antwerp by Runaque", font=('Arial', 9),
-                 fg='SlateGray', bg=self.bg_color).pack(fill='x', pady=(5, 0))
-        # Local fork attribution — remove this label before submitting a PR to the upstream repo
-        tk.Label(main_frame, text="improvements made in Johannesburg by MMitsialis", font=('Arial', 9),
-                 fg='SlateGray', bg=self.bg_color).pack(fill='x', pady=(0, 0))
         
         # Run initial calculation on startup
         self.perform_calculation()
